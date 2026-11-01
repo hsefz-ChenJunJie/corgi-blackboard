@@ -112,13 +112,32 @@ try {
         $spec = $licensePackages[$package]
         $packageRoot = Join-Path $env:NUGET_PACKAGES $spec.cache
         $nuspec = @(Get-ChildItem -LiteralPath $packageRoot -Filter '*.nuspec' -File -ErrorAction SilentlyContinue)
-        if ($nuspec.Count -ne 1) { throw "Pinned nuspec is missing or ambiguous: $package" }
-        [xml]$nuspecXml = Get-Content -LiteralPath $nuspec[0].FullName -Raw
+        $nuspecText = $null
+        $nuspecName = "$package.nuspec"
+        $nupkg = $null
+        $nuspecEntry = $null
+        $nuspecArchive = $null
+        if ($nuspec.Count -eq 1) {
+            $nuspecText = Get-Content -LiteralPath $nuspec[0].FullName -Raw
+        } elseif ($nuspec.Count -eq 0) {
+            $nupkg = @(Get-ChildItem -LiteralPath $packageRoot -Filter '*.nupkg' -File -ErrorAction SilentlyContinue)
+            if ($nupkg.Count -ne 1) { throw "Pinned nuspec is missing or ambiguous: $package" }
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $nuspecArchive = [IO.Compression.ZipFile]::OpenRead($nupkg[0].FullName)
+            $nuspecEntry = @($nuspecArchive.Entries | Where-Object { $_.FullName -match '(^|/)[^/]+\.nuspec$' })
+            if ($nuspecEntry.Count -ne 1) { throw "Pinned nupkg nuspec is missing or ambiguous: $package" }
+            $reader = [IO.StreamReader]::new($nuspecEntry[0].Open(), [Text.Encoding]::UTF8, $true)
+            try { $nuspecText = $reader.ReadToEnd() } finally { $reader.Dispose() }
+        } else {
+            throw "Pinned nuspec is missing or ambiguous: $package"
+        }
+        try { [xml]$nuspecXml = $nuspecText }
+        finally { if ($nuspecArchive) { $nuspecArchive.Dispose() } }
         $licenseNode = $nuspecXml.package.metadata.license
         if ($licenseNode.type -cne $spec.type -or [string]$licenseNode.'#text' -cne $spec.expression) {
             throw "Pinned nuspec license expression differs: $package"
         }
-        Copy-Item -LiteralPath $nuspec[0].FullName -Destination (Join-Path $stage ("$package.nuspec"))
+        [IO.File]::WriteAllText((Join-Path $stage $nuspecName), $nuspecText, [Text.UTF8Encoding]::new($false))
         if ($spec.source) {
             if (-not (Test-Path -LiteralPath $spec.source)) { throw "Checked-in license source is missing: $($spec.expression)" }
             Copy-Item -LiteralPath $spec.source -Destination (Join-Path $stage ("$package-$($spec.expression).txt"))
