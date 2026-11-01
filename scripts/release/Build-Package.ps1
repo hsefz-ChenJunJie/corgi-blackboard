@@ -132,6 +132,11 @@ try {
         "Installer: user-level offline setup compiled with Inno Setup 6.7.4; installation untested.`n" +
         "Logs: %LOCALAPPDATA%\CorgiBlackboard\Logs; uninstall must retain logs.`n" +
         "Open TEST-CHECKLIST.md and feedback-guide.md beside the executable.`n" +
+        "After extracting the same-version offline tests ZIP, run in Windows PowerShell 5.1:`n" +
+        "  .\Run-Scenario.ps1 -Scenario ReleaseSmoke -AppPath `"C:\path\CorgiBlackboard.App.exe`" -EvidenceDir .\results\smoke -ConfirmDesktop`n" +
+        "  .\Run-All.ps1 -AppPath `"C:\path\CorgiBlackboard.App.exe`" -EvidenceRoot .\results -ConfirmDesktop`n" +
+        "These checks require explicit desktop opt-in; GUI remains untested. HarnessFailure means the driver self-check failed, not product PASS. Synthetic touch is not a physical-device or classroom substitute.`n" +
+        "Complete the 19-item TEST-CHECKLIST.md and use feedback-guide.md for manual results.`n" +
         "Board saving/recovery, PDF/PPT, selection and global undo are not implemented.`n"
     [IO.File]::WriteAllText((Join-Path $payload 'RELEASE-NOTES.md'), $notes)
     $files = @(Get-ChildItem -LiteralPath $payload -File -Recurse | Sort-Object FullName | ForEach-Object {
