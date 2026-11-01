@@ -45,6 +45,15 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.402
+      - name: Require exact SDK before acquisition
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $selectedSdk = (dotnet --version | Out-String).Trim()
+          Write-Host "Selected .NET SDK: $selectedSdk"
+          if ($LASTEXITCODE -ne 0 -or $selectedSdk -cne '10.0.402') {
+            dotnet --list-sdks
+            throw "SDK mismatch: expected 10.0.402; selected '$selectedSdk'."
+          }
       - name: Acquire pinned Inno compiler
         id: compiler
         run: |
@@ -57,7 +66,6 @@ jobs:
       - name: Acquire pinned runtime cache
         run: |
           New-Item -ItemType Directory -Force -Path $env:NUGET_PACKAGES | Out-Null
-          dotnet --version
           dotnet restore src/CorgiBlackboard.App -r win-x64 --force-evaluate `
             -p:NuGetLockFilePath=obj/release-win-x64.packages.lock.json `
             "-p:Version=$env:VERSION" -p:RuntimeFrameworkVersion=10.0.13 `

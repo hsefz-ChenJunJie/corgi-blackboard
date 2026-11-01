@@ -39,7 +39,12 @@ jobs:
       - name: Require exact SDK and locked restore
         run: |
           $ErrorActionPreference = 'Stop'
-          if ((dotnet --version).Trim() -cne '10.0.402') { throw 'SDK mismatch' }
+          $selectedSdk = (dotnet --version | Out-String).Trim()
+          Write-Host "Selected .NET SDK: $selectedSdk"
+          if ($LASTEXITCODE -ne 0 -or $selectedSdk -cne '10.0.402') {
+            dotnet --list-sdks
+            throw "SDK mismatch: expected 10.0.402; selected '$selectedSdk'."
+          }
           dotnet restore CorgiBlackboard.sln --locked-mode
           if ($LASTEXITCODE -ne 0) { throw 'Locked solution restore failed' }
           dotnet restore tests/CorgiBlackboard.UiTests/PureHarnessTests --locked-mode
