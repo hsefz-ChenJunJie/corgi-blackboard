@@ -15,13 +15,13 @@ The Windows Desktop runtime pack has no own third-party notice file. The package
 
 | Package | Version | License | ZIP license text |
 | --- | --- | --- | --- |
-| Microsoft.NET.Test.Sdk | 17.14.1 | MIT | `Microsoft.NET.Test.Sdk-LICENSE.txt` or `NOTICE.txt` |
-| xunit | 2.9.3 | Apache-2.0 | `xunit-LICENSE.txt` or `NOTICE.txt` |
-| xunit.runner.visualstudio | 3.1.4 | Apache-2.0 | `xunit.runner.visualstudio-LICENSE.txt` or `NOTICE.txt` |
+| Microsoft.NET.Test.Sdk | 17.14.1 | MIT | `Microsoft.NET.Test.Sdk-MIT.txt` and `Microsoft.NET.Test.Sdk.nuspec` |
+| xunit | 2.9.3 | Apache-2.0 | `xunit-Apache-2.0.txt` and `xunit.nuspec` |
+| xunit.runner.visualstudio | 3.1.4 | Apache-2.0 | `xunit.runner.visualstudio-Apache-2.0.txt` and `xunit.runner.visualstudio.nuspec` |
 | FlaUI.Core | 5.0.0 | MIT | `FlaUI.Core-LICENSE.txt` |
 | FlaUI.UIA3 | 5.0.0 | MIT | `FlaUI.UIA3-LICENSE.txt` |
 
-These dependencies are shipped in the standalone test ZIP only. They are not part of the application ZIP or installer. The builder copies the cached package license and notice text verbatim and includes each copied file in the test ZIP inventory and checksum list.
+These dependencies are shipped in the standalone test ZIP only. They are not part of the application ZIP or installer. The MIT and Apache-2.0 texts are the standard SPDX texts (`https://spdx.org/licenses/MIT.txt` and `https://spdx.org/licenses/Apache-2.0.txt`), retained in `docs/licenses/` and copied with the pinned package nuspec. FlaUI license/notice files are copied verbatim from the pinned cache package. Every copied license, notice, and nuspec is included in the test ZIP inventory and checksum list.
 
 ## Reference sources
 

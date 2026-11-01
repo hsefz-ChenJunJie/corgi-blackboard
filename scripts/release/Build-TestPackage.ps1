@@ -102,19 +102,57 @@ try {
         Copy-Item -LiteralPath $noticePath -Destination (Join-Path $stage $notice)
     }
     $licensePackages = [ordered]@{
-        'FlaUI.Core' = 'flaui.core/5.0.0'
-        'FlaUI.UIA3' = 'flaui.uia3/5.0.0'
-        'Microsoft.NET.Test.Sdk' = 'microsoft.net.test.sdk/17.14.1'
-        'xunit' = 'xunit/2.9.3'
-        'xunit.runner.visualstudio' = 'xunit.runner.visualstudio/3.1.4'
+        'FlaUI.Core' = [ordered]@{ cache = 'flaui.core/5.0.0'; type = 'file'; expression = 'LICENSE.txt'; source = $null }
+        'FlaUI.UIA3' = [ordered]@{ cache = 'flaui.uia3/5.0.0'; type = 'file'; expression = 'LICENSE.txt'; source = $null }
+        'Microsoft.NET.Test.Sdk' = [ordered]@{ cache = 'microsoft.net.test.sdk/17.14.1'; type = 'expression'; expression = 'MIT'; source = (Join-Path $root 'docs/licenses/MIT.txt') }
+        'xunit' = [ordered]@{ cache = 'xunit/2.9.3'; type = 'expression'; expression = 'Apache-2.0'; source = (Join-Path $root 'docs/licenses/Apache-2.0.txt') }
+        'xunit.runner.visualstudio' = [ordered]@{ cache = 'xunit.runner.visualstudio/3.1.4'; type = 'expression'; expression = 'Apache-2.0'; source = (Join-Path $root 'docs/licenses/Apache-2.0.txt') }
     }
     foreach ($package in $licensePackages.Keys) {
-        $packageRoot = Join-Path $env:NUGET_PACKAGES $licensePackages[$package]
-        $licenseFiles = @(Get-ChildItem -LiteralPath $packageRoot -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match '(?i)^(license|notice|third.party)' })
-        if ($licenseFiles.Count -eq 0) { throw "License text is missing from cached package: $package" }
-        foreach ($licenseFile in $licenseFiles) {
-            Copy-Item -LiteralPath $licenseFile.FullName -Destination (Join-Path $stage ("$package-" + $licenseFile.Name))
+        $spec = $licensePackages[$package]
+        $packageRoot = Join-Path $env:NUGET_PACKAGES $spec.cache
+        $nuspec = @(Get-ChildItem -LiteralPath $packageRoot -Filter '*.nuspec' -File -ErrorAction SilentlyContinue)
+        $nuspecText = $null
+        $nuspecName = "$package.nuspec"
+        $nupkg = $null
+        $nuspecEntry = $null
+        $nuspecArchive = $null
+        if ($nuspec.Count -eq 1) {
+            $nuspecText = Get-Content -LiteralPath $nuspec[0].FullName -Raw
+        } elseif ($nuspec.Count -eq 0) {
+            $nupkg = @(Get-ChildItem -LiteralPath $packageRoot -Filter '*.nupkg' -File -ErrorAction SilentlyContinue)
+            if ($nupkg.Count -ne 1) { throw "Pinned nuspec is missing or ambiguous: $package" }
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $nuspecArchive = [IO.Compression.ZipFile]::OpenRead($nupkg[0].FullName)
+            $nuspecEntry = @($nuspecArchive.Entries | Where-Object { $_.FullName -match '(^|/)[^/]+\.nuspec$' })
+            if ($nuspecEntry.Count -ne 1) { throw "Pinned nupkg nuspec is missing or ambiguous: $package" }
+            $reader = [IO.StreamReader]::new($nuspecEntry[0].Open(), [Text.Encoding]::UTF8, $true)
+            try { $nuspecText = $reader.ReadToEnd() } finally { $reader.Dispose() }
+        } else {
+            throw "Pinned nuspec is missing or ambiguous: $package"
+        }
+        try { [xml]$nuspecXml = $nuspecText }
+        finally { if ($nuspecArchive) { $nuspecArchive.Dispose() } }
+        $licenseNode = $nuspecXml.package.metadata.license
+        if ($licenseNode.type -cne $spec.type -or [string]$licenseNode.'#text' -cne $spec.expression) {
+            throw "Pinned nuspec license expression differs: $package"
+        }
+        [IO.File]::WriteAllText((Join-Path $stage $nuspecName), $nuspecText, [Text.UTF8Encoding]::new($false))
+        if ($spec.source) {
+            if (-not (Test-Path -LiteralPath $spec.source)) { throw "Checked-in license source is missing: $($spec.expression)" }
+            Copy-Item -LiteralPath $spec.source -Destination (Join-Path $stage ("$package-$($spec.expression).txt"))
+        } else {
+            $licenseFiles = @(Get-ChildItem -LiteralPath $packageRoot -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match '(?i)^(license|notice|third.party)' })
+            if ($licenseFiles.Count -eq 0) { throw "License text is missing from cached package: $package" }
+            foreach ($licenseFile in $licenseFiles) {
+                Copy-Item -LiteralPath $licenseFile.FullName -Destination (Join-Path $stage ("$package-" + $licenseFile.Name))
+            }
+        }
+        $packageNotices = @(Get-ChildItem -LiteralPath $packageRoot -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '(?i)^(notice|copyright)' })
+        foreach ($noticeFile in $packageNotices) {
+            Copy-Item -LiteralPath $noticeFile.FullName -Destination (Join-Path $stage ("$package-" + $noticeFile.Name))
         }
     }
     @'
