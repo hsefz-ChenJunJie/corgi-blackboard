@@ -2,6 +2,9 @@ name: Verify source and staged Test package
 
 on:
   pull_request:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       package_run_id:

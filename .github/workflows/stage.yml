@@ -8,6 +8,11 @@ on:
         required: true
         type: string
         default: 0.1.0-test.1
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -23,10 +28,20 @@ jobs:
     timeout-minutes: 45
     env:
       NUGET_PACKAGES: ${{ runner.temp }}\corgi-nuget-cache
+      VERSION: ${{ inputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Require exact Test version and source
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+          GIT_MASTER: '1'
+        run: |
+          if ($env:VERSION -cnotmatch '^0\.1\.0-test\.[1-9][0-9]*$') { throw 'Invalid Test version.' }
+          $commit = git rev-parse --verify HEAD
+          if ($LASTEXITCODE -ne 0 -or $commit -cne $env:EXPECTED_COMMIT) { throw 'Staging source mismatch.' }
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.402
@@ -36,6 +51,7 @@ jobs:
           & pwsh -NoProfile -File scripts/release/Acquire-Compiler.ps1 `
             -Destination "$env:RUNNER_TEMP\corgi-compiler" `
             -ProvenancePath "$env:RUNNER_TEMP\corgi-compiler\compiler-provenance.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned compiler acquisition failed.' }
           "compiler_path=$env:RUNNER_TEMP\corgi-compiler\compiler\{app}\ISCC.exe" >> $env:GITHUB_OUTPUT
           "provenance_path=$env:RUNNER_TEMP\corgi-compiler\compiler-provenance.json" >> $env:GITHUB_OUTPUT
       - name: Acquire pinned runtime cache
@@ -44,7 +60,7 @@ jobs:
           dotnet --version
           dotnet restore src/CorgiBlackboard.App -r win-x64 --force-evaluate `
             -p:NuGetLockFilePath=obj/release-win-x64.packages.lock.json `
-            -p:Version=${{ inputs.version }} -p:RuntimeFrameworkVersion=10.0.13 `
+            "-p:Version=$env:VERSION" -p:RuntimeFrameworkVersion=10.0.13 `
             -p:SelfContained=true -p:RestoreSources=https://api.nuget.org/v3/index.json `
             -p:NuGetAudit=false
           if ($LASTEXITCODE -ne 0) { throw 'Pinned runtime acquisition failed.' }

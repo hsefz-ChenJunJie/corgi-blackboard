@@ -1,27 +1,6 @@
 name: Guarded Test prerelease
 
 on:
-  workflow_dispatch:
-    inputs:
-      package_run_id:
-        description: Run containing the staged package bound to this tag commit
-        required: true
-        type: number
-      authorize_publication:
-        description: Explicit user authorization to publish this exact Test tag and package
-        type: boolean
-        default: false
-      channel:
-        description: Stable requires explicit user channel approval and a separate reviewed workflow
-        type: choice
-        options:
-          - Test
-          - Stable
-        default: Test
-      stable_user_authorized:
-        description: Records explicit Stable channel direction; never enables Stable here
-        type: boolean
-        default: false
   push:
     tags:
       - 'v0.1.0-test.*'
@@ -38,35 +17,46 @@ jobs:
   request:
     runs-on: windows-2022
     timeout-minutes: 5
+    outputs:
+      version: ${{ steps.authorization.outputs.version }}
+      tag_object: ${{ steps.authorization.outputs.tag_object }}
+      authorized: ${{ steps.authorization.outputs.authorized }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 0
       - name: Require Test tag and explicit authorization
+        id: authorization
         shell: pwsh
         env:
           EVENT: ${{ github.event_name }}
-          TAG: ${{ github.ref }}
-          CHANNEL: ${{ inputs.channel || 'Test' }}
-          AUTHORIZED: ${{ inputs.authorize_publication }}
-          STABLE_AUTHORIZED: ${{ inputs.stable_user_authorized }}
+          TAG_REF: ${{ github.ref }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
         run: |
-          if ($env:CHANNEL -ceq 'Stable') {
-            if ($env:STABLE_AUTHORIZED -cne 'true') { throw 'Stable requires explicit user channel direction' }
-            throw 'Stable is outside this Test-only workflow; review a separate Stable delivery'
-          }
-          if ($env:CHANNEL -cne 'Test' -or $env:TAG -cnotmatch '^refs/tags/v0\.1\.0-test\.[1-9][0-9]*$') {
-            throw 'Select an existing Test tag, never a branch or Stable tag'
-          }
-          if ($env:EVENT -cne 'workflow_dispatch' -or $env:AUTHORIZED -cne 'true') {
-            throw 'A Test tag push cannot authorize publication; dispatch on the tag with explicit authorization'
-          }
+          if ($env:EVENT -cne 'push') { throw 'Publication requires an authorized Test tag push.' }
+          $authorization = & ./scripts/release/Test-TagAuthorization.ps1 `
+            -TagRef $env:TAG_REF -ExpectedCommit $env:EXPECTED_COMMIT -Repository $env:REPOSITORY
+          "version=$($authorization.version)" >> $env:GITHUB_OUTPUT
+          "tag_object=$($authorization.tagObject)" >> $env:GITHUB_OUTPUT
+          'authorized=true' >> $env:GITHUB_OUTPUT
+
+  stage:
+    needs: request
+    uses: ./.github/workflows/stage.yml
+    with:
+      version: ${{ needs.request.outputs.version }}
 
   checks:
-    needs: request
+    needs: stage
     uses: ./.github/workflows/verify.yml
     with:
-      package_run_id: ${{ inputs.package_run_id || 0 }}
+      package_run_id: ${{ fromJSON(github.run_id) }}
 
   readiness:
-    needs: checks
+    needs: [request, checks]
     runs-on: windows-2022
     timeout-minutes: 10
     outputs:
@@ -85,13 +75,13 @@ jobs:
         with:
           name: test-readiness-${{ github.sha }}
           path: .omo/evidence/phase-one/task-15/staged
-          run-id: ${{ inputs.package_run_id }}
-          github-token: ${{ github.token }}
       - name: Bind explicit Test authorization
         shell: pwsh
         env:
           EXPECTED_COMMIT: ${{ github.sha }}
           VERSION_TAG: ${{ github.ref_name }}
+          TAG_OBJECT: ${{ needs.request.outputs.tag_object }}
+          RUN_ID: ${{ github.run_id }}
         run: |
           $ErrorActionPreference = 'Stop'
           $directory = (Resolve-Path artifacts/staged-package).ProviderPath
@@ -105,7 +95,8 @@ jobs:
           $installer = "CorgiBlackboard-$($manifest.version)-win-x64-setup.exe"
           $testZip = "CorgiBlackboard-$($manifest.version)-win-x64-tests.zip"
           $record = [ordered]@{
-            authorized = $true; userInstruction = "Authorized Test prerelease $env:VERSION_TAG"
+            authorized = $true; userInstruction = "Annotated tag authorized Test prerelease $env:VERSION_TAG and validated same-run assets"
+            tagObject = $env:TAG_OBJECT; runId = $env:RUN_ID
             commit = $env:EXPECTED_COMMIT; version = $manifest.version; channel = 'Test'
             manifestSha256 = $sums['release-manifest.json']; exeSha256 = $manifest.exeSha256
             zipSha256 = $sums[$zip]; installerSha256 = $sums[$installer]
@@ -150,8 +141,8 @@ jobs:
       ${{ needs.request.result == 'success' && needs.checks.result == 'success' &&
           needs.readiness.result == 'success' && needs.readiness.outputs.package_integrity == 'true' &&
           needs.readiness.outputs.publication_readiness == 'true' &&
-          github.event_name == 'workflow_dispatch' && inputs.authorize_publication == true &&
-          inputs.channel == 'Test' && startsWith(github.ref, 'refs/tags/v0.1.0-test.') }}
+          github.event_name == 'push' && needs.request.outputs.authorized == 'true' &&
+          startsWith(github.ref, 'refs/tags/v0.1.0-test.') }}
     runs-on: windows-2022
     timeout-minutes: 10
     environment: test-prerelease
@@ -162,6 +153,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Recheck the exact authorization tag before publication
+        shell: pwsh
+        env:
+          TAG_REF: ${{ github.ref }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+          TAG_OBJECT: ${{ needs.request.outputs.tag_object }}
+        run: |
+          & ./scripts/release/Test-TagAuthorization.ps1 -TagRef $env:TAG_REF `
+            -ExpectedCommit $env:EXPECTED_COMMIT -Repository $env:REPOSITORY `
+            -ExpectedTagObject $env:TAG_OBJECT
       - uses: actions/download-artifact@v4
         with:
           name: validated-test-package-${{ github.sha }}
@@ -170,13 +174,13 @@ jobs:
         with:
           name: test-readiness-${{ github.sha }}
           path: .omo/evidence/phase-one/task-15/staged
-          run-id: ${{ inputs.package_run_id }}
-          github-token: ${{ github.token }}
       - name: Bind explicit Test authorization
         shell: pwsh
         env:
           EXPECTED_COMMIT: ${{ github.sha }}
           VERSION_TAG: ${{ github.ref_name }}
+          TAG_OBJECT: ${{ needs.request.outputs.tag_object }}
+          RUN_ID: ${{ github.run_id }}
         run: |
           $ErrorActionPreference = 'Stop'
           $directory = (Resolve-Path artifacts/staged-package).ProviderPath
@@ -190,7 +194,8 @@ jobs:
           $installer = "CorgiBlackboard-$($manifest.version)-win-x64-setup.exe"
           $testZip = "CorgiBlackboard-$($manifest.version)-win-x64-tests.zip"
           $record = [ordered]@{
-            authorized = $true; userInstruction = "Authorized Test prerelease $env:VERSION_TAG"
+            authorized = $true; userInstruction = "Annotated tag authorized Test prerelease $env:VERSION_TAG and validated same-run assets"
+            tagObject = $env:TAG_OBJECT; runId = $env:RUN_ID
             commit = $env:EXPECTED_COMMIT; version = $manifest.version; channel = 'Test'
             manifestSha256 = $sums['release-manifest.json']; exeSha256 = $manifest.exeSha256
             zipSha256 = $sums[$zip]; installerSha256 = $sums[$installer]
