@@ -83,7 +83,7 @@ try {
         if ((Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $component.packageSha256) {
             throw "Pinned runtime pack archive hash differs: $($component.package)"
         }
-        $component.sourcePath = [IO.Path]::GetFullPath($componentRoot)
+        $component.sourcePath = "C:/Users/Minecraft/.nuget/packages/$($component.package)/$($component.version)"
         foreach ($file in $component.files) {
             $sourcePath = Join-Path $componentRoot $file.sourcePath
             $destinationPath = Join-Path $payload $file.destination
