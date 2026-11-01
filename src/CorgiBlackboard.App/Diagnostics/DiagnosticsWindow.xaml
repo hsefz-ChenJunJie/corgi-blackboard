@@ -1,0 +1,55 @@
+<Window x:Class="CorgiBlackboard.App.Diagnostics.DiagnosticsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="诊断与反馈" Width="820" Height="640" MinWidth="640" MinHeight="480"
+        WindowStartupLocation="CenterOwner">
+  <Grid Margin="18">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <TextBlock Text="本地诊断与反馈" FontSize="24" FontWeight="Bold"/>
+    <Grid Grid.Row="1" Margin="0,14,0,10">
+      <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+      <StackPanel>
+        <TextBlock x:Name="StatusText" AutomationProperties.AutomationId="Diagnostics.Status" FontSize="16"/>
+        <TextBlock x:Name="IdentityText" Margin="0,4,0,0"/>
+      </StackPanel>
+      <StackPanel Grid.Column="1">
+        <TextBlock x:Name="DiskText"/>
+        <TextBlock x:Name="OverageText" TextWrapping="Wrap" Foreground="#B00020" AutomationProperties.AutomationId="Diagnostics.Overage"/>
+        <Button Content="打开日志目录" Click="OpenFolder" AutomationProperties.AutomationId="Diagnostics.OpenFolder"/>
+        <TextBox x:Name="OutputPath" ToolTip="反馈包完整路径；留空则在导出时选择位置" AutomationProperties.AutomationId="Diagnostics.OutputPath"/>
+      </StackPanel>
+    </Grid>
+    <ListBox x:Name="SessionsList" Grid.Row="2" SelectionMode="Extended"
+             AutomationProperties.AutomationId="Diagnostics.Sessions"
+             DisplayMemberPath="Display"/>
+    <Grid Grid.Row="3" Margin="0,12,0,8">
+      <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+      <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+      <Button Grid.Column="0" Content="导出所选反馈" Click="ExportSelected" AutomationProperties.AutomationId="Diagnostics.Export"/>
+      <Button Grid.Column="1" Content="删除所选会话" Click="DeleteSelected" AutomationProperties.AutomationId="Diagnostics.Delete"/>
+      <Button Grid.Column="2" Content="固定/取消固定" Click="TogglePinned" AutomationProperties.AutomationId="Diagnostics.Pin"/>
+      <WrapPanel Grid.Row="1" Grid.ColumnSpan="3" Margin="0,8,0,0">
+        <TextBlock Text="保留天数：" VerticalAlignment="Center"/>
+        <TextBox x:Name="RetentionDays" Text="14" Width="58" Margin="4,3" AutomationProperties.AutomationId="Diagnostics.Retention"/>
+        <TextBlock Text="总额(MB)：" VerticalAlignment="Center"/>
+        <TextBox x:Name="RetentionMegabytes" Text="2048" Width="90" Margin="4,3" AutomationProperties.AutomationId="Diagnostics.RetentionSize"/>
+        <Button Content="应用" Click="ApplyRetention" Margin="4,0" AutomationProperties.AutomationId="Diagnostics.ApplyRetention"/>
+      </WrapPanel>
+    </Grid>
+    <Grid Grid.Row="4" Margin="0,0,0,8">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition/></Grid.ColumnDefinitions>
+      <TextBlock Text="复现步骤：" VerticalAlignment="Top"/>
+      <TextBox x:Name="ReproductionSteps" Grid.Column="1" Margin="6,0,12,0" MinHeight="42" TextWrapping="Wrap" AcceptsReturn="True" AutomationProperties.AutomationId="Diagnostics.Steps"/>
+      <TextBlock Text="预期/实际：" Grid.Column="2" VerticalAlignment="Top"/>
+      <StackPanel Grid.Column="3">
+        <TextBox x:Name="Expected" Margin="0,0,0,3" ToolTip="预期结果" AutomationProperties.AutomationId="Diagnostics.Expected"/>
+        <TextBox x:Name="Actual" ToolTip="实际结果" AutomationProperties.AutomationId="Diagnostics.Actual"/>
+        <TextBlock Text="导出前确认：反馈包会包含已记录的触点坐标。" Foreground="#6B4F00" TextWrapping="Wrap" Margin="0,4,0,0"/>
+      </StackPanel>
+    </Grid>
+    <TextBlock Grid.Row="5" x:Name="MessageText" Foreground="#B00020" TextWrapping="Wrap"/>
+  </Grid>
+</Window>

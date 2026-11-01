@@ -1,0 +1,53 @@
+<UserControl x:Class="CorgiBlackboard.App.Controls.TeachingToolbar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             AutomationProperties.AutomationId="TeachingToolbar"
+             AutomationProperties.Name="教学工具栏"
+             Background="{StaticResource ToolbarBackground}">
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                PanningMode="VerticalOnly">
+    <WrapPanel x:Name="Tools" Orientation="Horizontal" Margin="8,4"
+               ButtonBase.Click="SelectTool">
+      <ToggleButton x:Name="PenButton" Content="铅笔" IsChecked="True" ToolTip="铅笔：按当前颜色和粗细书写"
+                    AutomationProperties.AutomationId="Tool.Pen" AutomationProperties.Name="铅笔" />
+      <ToggleButton x:Name="EraserButton" Content="橡皮" ToolTip="橡皮：局部擦除笔迹"
+                    AutomationProperties.AutomationId="Tool.Eraser" AutomationProperties.Name="橡皮" />
+      <Separator Width="1" Margin="8,4" Background="#5A626D" />
+      <TextBlock Text="颜色" Foreground="{StaticResource ToolbarForeground}" VerticalAlignment="Center" Margin="4,0" />
+      <ToggleButton Content="白" Background="#FFFFFF" Foreground="#111111" IsChecked="True"
+                    ToolTip="白色" AutomationProperties.AutomationId="Tool.Color.White" AutomationProperties.Name="白色" />
+      <ToggleButton Content="红" Background="#E55353" Foreground="White"
+                    ToolTip="红色" AutomationProperties.AutomationId="Tool.Color.Red" AutomationProperties.Name="红色" />
+      <ToggleButton Content="黄" Background="#EBCB4B" Foreground="#111111"
+                    ToolTip="黄色" AutomationProperties.AutomationId="Tool.Color.Yellow" AutomationProperties.Name="黄色" />
+      <ToggleButton Content="绿" Background="#4DBA75" Foreground="#111111"
+                    ToolTip="绿色" AutomationProperties.AutomationId="Tool.Color.Green" AutomationProperties.Name="绿色" />
+      <ToggleButton Content="蓝" Background="#5595DC" Foreground="White"
+                    ToolTip="蓝色" AutomationProperties.AutomationId="Tool.Color.Blue" AutomationProperties.Name="蓝色" />
+      <Separator Width="1" Margin="8,4" Background="#5A626D" />
+      <TextBlock Text="粗细" Foreground="{StaticResource ToolbarForeground}" VerticalAlignment="Center" Margin="4,0" />
+      <ToggleButton Content="2" ToolTip="笔画粗细 2 DIP"
+                    AutomationProperties.AutomationId="Tool.Width.2" AutomationProperties.Name="粗细 2 DIP" />
+      <ToggleButton Content="4" IsChecked="True" ToolTip="笔画粗细 4 DIP"
+                    AutomationProperties.AutomationId="Tool.Width.4" AutomationProperties.Name="粗细 4 DIP" />
+      <ToggleButton Content="8" ToolTip="笔画粗细 8 DIP"
+                    AutomationProperties.AutomationId="Tool.Width.8" AutomationProperties.Name="粗细 8 DIP" />
+      <ToggleButton Content="12" ToolTip="笔画粗细 12 DIP"
+                    AutomationProperties.AutomationId="Tool.Width.12" AutomationProperties.Name="粗细 12 DIP" />
+      <TextBlock Text="橡皮" Foreground="{StaticResource ToolbarForeground}" VerticalAlignment="Center" Margin="8,0,4,0" />
+      <ToggleButton Content="12" ToolTip="橡皮直径 12 DIP"
+                    AutomationProperties.AutomationId="Tool.EraserSize.12" AutomationProperties.Name="橡皮直径 12 DIP" />
+      <ToggleButton Content="24" IsChecked="True" ToolTip="橡皮直径 24 DIP"
+                    AutomationProperties.AutomationId="Tool.EraserSize.24" AutomationProperties.Name="橡皮直径 24 DIP" />
+      <ToggleButton Content="48" ToolTip="橡皮直径 48 DIP"
+                    AutomationProperties.AutomationId="Tool.EraserSize.48" AutomationProperties.Name="橡皮直径 48 DIP" />
+      <Separator Width="1" Margin="8,4" Background="#5A626D" />
+      <Button Content="打开图片" ToolTip="打开一张图片资料" Click="OpenImage"
+              AutomationProperties.AutomationId="OpenImage" AutomationProperties.Name="打开图片" />
+      <Button Content="诊断" ToolTip="查看本地诊断与反馈" Click="OpenDiagnostics"
+              AutomationProperties.AutomationId="Diagnostics.Open" AutomationProperties.Name="打开诊断" />
+      <Button x:Name="DocumentListButton" Content="最小化资料" ToolTip="恢复或管理资料窗口" Click="ShowDocuments"
+              AutomationProperties.AutomationId="MinimizedDocuments" AutomationProperties.Name="最小化资料" />
+    </WrapPanel>
+  </ScrollViewer>
+</UserControl>

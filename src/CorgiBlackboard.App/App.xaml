@@ -1,0 +1,29 @@
+<Application x:Class="CorgiBlackboard.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Application.Resources>
+    <SolidColorBrush x:Key="ToolbarBackground" Color="#20242B" />
+    <SolidColorBrush x:Key="ToolbarForeground" Color="#F7F8FA" />
+    <Style TargetType="{x:Type Button}">
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="MinHeight" Value="48" />
+      <Setter Property="MinWidth" Value="48" />
+      <Setter Property="Margin" Value="3" />
+      <Setter Property="Padding" Value="10,4" />
+    </Style>
+    <Style TargetType="{x:Type ToggleButton}">
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="MinHeight" Value="48" />
+      <Setter Property="MinWidth" Value="48" />
+      <Setter Property="Margin" Value="3" />
+      <Setter Property="Padding" Value="10,4" />
+      <Setter Property="BorderThickness" Value="3" />
+      <Style.Triggers>
+        <Trigger Property="IsChecked" Value="True">
+          <Setter Property="BorderBrush" Value="#1678C8" />
+          <Setter Property="FontWeight" Value="Bold" />
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+  </Application.Resources>
+</Application>

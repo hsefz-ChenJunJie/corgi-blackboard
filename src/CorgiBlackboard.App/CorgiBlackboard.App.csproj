@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><EnableWindowsTargeting>true</EnableWindowsTargeting></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../CorgiBlackboard.Core/CorgiBlackboard.Core.csproj" /><ProjectReference Include="../CorgiBlackboard.Infrastructure/CorgiBlackboard.Infrastructure.csproj" /></ItemGroup>
+</Project>

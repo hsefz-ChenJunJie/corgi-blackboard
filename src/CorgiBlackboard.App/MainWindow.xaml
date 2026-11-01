@@ -1,0 +1,36 @@
+<Window x:Class="CorgiBlackboard.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:CorgiBlackboard.App.Controls"
+        xmlns:views="clr-namespace:CorgiBlackboard.App.Views"
+        Title="教学黑板" Width="1024" Height="768" MinWidth="240" MinHeight="180"
+        WindowStartupLocation="CenterScreen" Background="#101216"
+        SnapsToDevicePixels="True" UseLayoutRounding="True">
+  <Grid Background="#101216">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <!-- Chrome is deliberately outside the board surface transform. -->
+    <controls:TeachingToolbar x:Name="Toolbar" Grid.Row="0" Panel.ZIndex="10" />
+    <TextBlock x:Name="DiagnosticStartupStatus" Grid.Row="1" Foreground="#FFD166"
+               Background="#20242B" Padding="8" TextWrapping="Wrap" Visibility="Collapsed"
+               AutomationProperties.AutomationId="Diagnostics.StartupStatus" />
+    <views:BoardSurface x:Name="Board" Grid.Row="2" Margin="0"
+            AutomationProperties.AutomationId="BoardSurface"
+            AutomationProperties.Name="黑板区域"
+            ToolTip="黑板：单指或笔按当前工具编辑，双指平移" />
+    <!-- Screen-fixed document windows will be children of this sibling layer. -->
+    <Canvas Grid.Row="2" x:Name="DocumentWindowLayer" ClipToBounds="True" />
+    <Border x:Name="ImportStatus" Grid.Row="2" Panel.ZIndex="2147483647"
+            VerticalAlignment="Bottom" Background="#20242B" Padding="8" Visibility="Collapsed">
+      <StackPanel Orientation="Horizontal">
+        <TextBlock x:Name="ImageErrorText" Foreground="White" VerticalAlignment="Center"
+                   TextWrapping="Wrap" AutomationProperties.AutomationId="ImageImport.Status" />
+        <Button x:Name="CancelImportButton" Content="取消加载" MinWidth="88" MinHeight="44"
+                Click="CancelImport" AutomationProperties.AutomationId="ImageImport.Cancel" />
+      </StackPanel>
+    </Border>
+  </Grid>
+</Window>

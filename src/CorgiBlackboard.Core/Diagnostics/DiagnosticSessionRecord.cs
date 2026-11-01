@@ -1,0 +1,26 @@
+namespace CorgiBlackboard.Core.Diagnostics;
+
+public sealed record DiagnosticSessionRecord(
+    int SchemaVersion,
+    Guid SessionId,
+    long Sequence,
+    DateTimeOffset Utc,
+    long MonotonicTicks,
+    string BuildVersion,
+    string Channel,
+    string? GitHash,
+    string OperatingSystem,
+    string Dpi,
+    string DeviceId,
+    string Name,
+    DiagnosticKind Kind,
+    DiagnosticSeverity Severity,
+    string? OperationId,
+    string? SurfaceId,
+    string? WindowId,
+    string? DeviceIdentifier,
+    IReadOnlyList<DiagnosticPointerSample>? PointerSamples,
+    IReadOnlyDictionary<string, string>? Data,
+    DiagnosticAsset? Asset,
+    double? DurationMilliseconds,
+    DiagnosticException? Exception);

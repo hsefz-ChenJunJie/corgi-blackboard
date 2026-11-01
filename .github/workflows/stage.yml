@@ -1,0 +1,91 @@
+name: Stage Test package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact numeric Test version to stage
+        required: true
+        type: string
+        default: 0.1.0-test.1
+
+permissions:
+  contents: read
+  actions: read
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  stage:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      NUGET_PACKAGES: ${{ runner.temp }}\corgi-nuget-cache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.402
+      - name: Acquire pinned Inno compiler
+        id: compiler
+        run: |
+          & pwsh -NoProfile -File scripts/release/Acquire-Compiler.ps1 `
+            -Destination "$env:RUNNER_TEMP\corgi-compiler" `
+            -ProvenancePath "$env:RUNNER_TEMP\corgi-compiler\compiler-provenance.json"
+          "compiler_path=$env:RUNNER_TEMP\corgi-compiler\compiler\{app}\ISCC.exe" >> $env:GITHUB_OUTPUT
+          "provenance_path=$env:RUNNER_TEMP\corgi-compiler\compiler-provenance.json" >> $env:GITHUB_OUTPUT
+      - name: Acquire pinned runtime cache
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:NUGET_PACKAGES | Out-Null
+          dotnet --version
+          dotnet restore src/CorgiBlackboard.App -r win-x64 --force-evaluate `
+            -p:NuGetLockFilePath=obj/release-win-x64.packages.lock.json `
+            -p:Version=${{ inputs.version }} -p:RuntimeFrameworkVersion=10.0.13 `
+            -p:SelfContained=true -p:RestoreSources=https://api.nuget.org/v3/index.json `
+            -p:NuGetAudit=false
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned runtime acquisition failed.' }
+      - name: Acquire pinned UI-driver dependency cache
+        run: |
+          $uiLock = Join-Path $env:RUNNER_TEMP 'corgi-ui-tests-win-x64.packages.lock.json'
+          dotnet restore tests/CorgiBlackboard.UiTests/CorgiBlackboard.UiTests.csproj -r win-x64 --force-evaluate `
+            "-p:NuGetLockFilePath=$uiLock" -p:RestoreLockedMode=false `
+            -p:RestoreSources=https://api.nuget.org/v3/index.json -p:NuGetAudit=false
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned UI-driver dependency acquisition failed.' }
+          if (-not (Test-Path -LiteralPath $uiLock)) { throw 'Generated UI-driver RID lock is missing.' }
+      - name: Build and validate exact-source Test package
+        env:
+          COMPILER_PATH: ${{ steps.compiler.outputs.compiler_path }}
+          PROVENANCE_PATH: ${{ steps.compiler.outputs.provenance_path }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          if ($env:VERSION -notmatch '^0\.1\.0-test\.[1-9][0-9]*$') { throw 'Invalid Test version.' }
+          & pwsh -NoProfile -File scripts/release/Stage-TestPackage.ps1 `
+            -Version $env:VERSION `
+            -ArtifactDir 'artifacts/staged' `
+            -DotnetPath (Get-Command dotnet).Source `
+            -CompilerPath $env:COMPILER_PATH `
+            -CompilerProvenancePath $env:PROVENANCE_PATH `
+            -RuntimePackageRoot $env:NUGET_PACKAGES
+          if ($LASTEXITCODE -ne 0) { throw 'Test package staging failed.' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-package-${{ github.sha }}
+          path: |
+            artifacts/staged/*.zip
+            artifacts/staged/*-setup.exe
+            artifacts/staged/*.md
+            artifacts/staged/release-manifest.json
+            artifacts/staged/test-manifest.json
+            artifacts/staged/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-readiness-${{ github.sha }}
+          path: artifacts/staged/readiness.json
+          if-no-files-found: error
+          retention-days: 14

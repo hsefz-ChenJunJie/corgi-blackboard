@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework><IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" /><PackageReference Include="xunit" /><PackageReference Include="xunit.runner.visualstudio" />
+    <Compile Include="../QaContract.cs" Link="QaContract.cs" />
+    <Compile Include="../NativeTouch.cs" Link="NativeTouch.cs" />
+    <Compile Include="../../../src/CorgiBlackboard.App/Diagnostics/DiagnosticStartup.cs" Link="DiagnosticStartup.cs" />
+    <Compile Include="../../../src/CorgiBlackboard.App/Diagnostics/DiagnosticSessionStatus.cs" Link="DiagnosticSessionStatus.cs" />
+    <Compile Include="../../../src/CorgiBlackboard.Infrastructure/Diagnostics/DiagnosticProducers.cs" Link="DiagnosticProducers.cs" />
+    <Compile Include="../../../src/CorgiBlackboard.Infrastructure/Diagnostics/DiagnosticChecklist.cs" Link="DiagnosticChecklist.cs" />
+    <Compile Include="../../../src/CorgiBlackboard.Infrastructure/Diagnostics/DiagnosticInitializationPlan.cs" Link="DiagnosticInitializationPlan.cs" />
+    <Compile Include="../../../src/CorgiBlackboard.Infrastructure/Images/ImageFingerprint.cs" Link="ImageFingerprint.cs" />
+    <ProjectReference Include="../../../src/CorgiBlackboard.Core/CorgiBlackboard.Core.csproj" />
+    <EmbeddedResource Include="../../../docs/testing/0.1.0-test.1-classroom-checklist.md" LogicalName="CorgiBlackboard.ClassroomChecklist.md" />
+    <None Include="../../../docs/testing/0.1.0-test.1-classroom-checklist.md" Link="canonical-checklist.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

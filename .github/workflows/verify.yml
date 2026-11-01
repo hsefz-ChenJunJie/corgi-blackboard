@@ -1,0 +1,126 @@
+name: Verify source and staged Test package
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      package_run_id:
+        description: Optional run containing an explicitly staged test-package-COMMIT artifact (0 skips package validation for ordinary PRs)
+        type: number
+        default: 0
+  workflow_call:
+    inputs:
+      package_run_id:
+        type: number
+        default: 0
+
+permissions:
+  contents: read
+  actions: read
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  source:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.402
+      - name: Require exact SDK and locked restore
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ((dotnet --version).Trim() -cne '10.0.402') { throw 'SDK mismatch' }
+          dotnet restore CorgiBlackboard.sln --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Locked solution restore failed' }
+          dotnet restore tests/CorgiBlackboard.UiTests/PureHarnessTests --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Locked harness restore failed' }
+      - name: Compile solution and desktop drivers without executing them
+        run: |
+          dotnet build CorgiBlackboard.sln --no-restore -c Release -warnaserror -p:ReleaseChannel=Test -m:1
+          if ($LASTEXITCODE -ne 0) { throw 'Solution build failed' }
+          dotnet build tests/CorgiBlackboard.UiTests/PureHarnessTests --no-restore -c Release -warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'Harness build failed' }
+      - name: Run only pure logic and harness contract tests
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($entry in @(
+            @('tests/CorgiBlackboard.Core.Tests', 'core'),
+            @('tests/CorgiBlackboard.UiTests/PureHarnessTests', 'contracts')
+          )) {
+            dotnet test $entry[0] --no-build --no-restore -c Release --logger "trx;LogFileName=$($entry[1]).trx" --results-directory artifacts/ci-tests
+            if ($LASTEXITCODE -ne 0) { throw "Test failure: $($entry[1])" }
+            [xml]$trx = Get-Content "artifacts/ci-tests/$($entry[1]).trx" -Raw
+            $counts = $trx.TestRun.ResultSummary.Counters
+            if ([int]$counts.total -le 0 -or [int]$counts.total -ne [int]$counts.passed) {
+              throw 'Empty, failed or skipped test set'
+            }
+          }
+          dotnet test tests/CorgiBlackboard.Infrastructure.Tests --no-build --no-restore -c Release `
+            --filter "FullyQualifiedName~DiagnosticSessionTests|FullyQualifiedName~FeedbackBoundaryTests|FullyQualifiedName~FeedbackConcurrencyTests|FullyQualifiedName~DiagnosticLifecycleTests|FullyQualifiedName~WorkspaceDiagnosticsTests" `
+            --logger "trx;LogFileName=diagnostics.trx" --results-directory artifacts/ci-tests
+          if ($LASTEXITCODE -ne 0) { throw 'Non-desktop diagnostics test failure' }
+          [xml]$diagnostics = Get-Content artifacts/ci-tests/diagnostics.trx -Raw
+          $diagnosticCounts = $diagnostics.TestRun.ResultSummary.Counters
+          if ([int]$diagnosticCounts.total -le 0 -or [int]$diagnosticCounts.total -ne [int]$diagnosticCounts.passed) {
+            throw 'Empty, failed or skipped diagnostics test set'
+          }
+          'Desktop/UIA/touch/DPI, offline installation and classroom execution remain unverified.' >> $env:GITHUB_STEP_SUMMARY
+          if ('${{ inputs.package_run_id || 0 }}' -eq '0') {
+            'No package_run_id supplied; package validation is intentionally skipped for this ordinary source verification.' >> $env:GITHUB_STEP_SUMMARY
+          }
+
+  package:
+    needs: source
+    if: ${{ inputs.package_run_id != 0 }}
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require separately staged package evidence
+        env:
+          PACKAGE_RUN_ID: ${{ inputs.package_run_id || 0 }}
+        run: |
+          if ($env:PACKAGE_RUN_ID -notmatch '^[1-9][0-9]*$') {
+            throw 'Task 14 is bounded [~]. No verified package is available; supply an authorized staging run after packaging is repaired.'
+          }
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-package-${{ github.sha }}
+          path: artifacts/staged-package
+          run-id: ${{ inputs.package_run_id }}
+          github-token: ${{ github.token }}
+      - name: Validate package inventory, SHA and source binding without execution
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & pwsh -NoProfile -File scripts/release/Test-Package.ps1 -ArtifactDir artifacts/staged-package -StaticOnly
+          if ($LASTEXITCODE -ne 0) { throw 'Static package validation failed' }
+          $manifest = Get-Content artifacts/staged-package/release-manifest.json -Raw | ConvertFrom-Json
+          if ($manifest.commit -cne $env:EXPECTED_COMMIT) { throw 'Package commit differs from checked source' }
+          if ($manifest.packageIntegrity.status -cne 'requires-validation' -or
+              $manifest.packageIntegrity.receipt -cne 'external') {
+            throw 'Package manifest must delegate integrity receipt validation externally'
+          }
+          'Package integrity is validated separately; desktop, offline and publication readiness remain unverified.' >> $env:GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: validated-test-package-${{ github.sha }}
+          path: |
+            artifacts/staged-package/*.zip
+            artifacts/staged-package/*-setup.exe
+            artifacts/staged-package/*.md
+            artifacts/staged-package/release-manifest.json
+            artifacts/staged-package/test-manifest.json
+            artifacts/staged-package/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7

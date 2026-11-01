@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0-windows</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><EnableWindowsTargeting>true</EnableWindowsTargeting><UseWPF>true</UseWPF></PropertyGroup>
+  <PropertyGroup>
+    <ReleaseChannel>Test</ReleaseChannel>
+    <Version Condition="'$(Version)' == ''">1.0.0</Version>
+  </PropertyGroup>
+  <Target Name="GenerateDiagnosticBuildIdentity" BeforeTargets="GetAssemblyAttributes">
+    <Error Condition="'$(ReleaseChannel)' != 'Test' and '$(ReleaseChannel)' != 'Stable'" Text="ReleaseChannel must be Test or Stable." />
+    <Exec Command="git rev-parse --verify HEAD" WorkingDirectory="$(MSBuildProjectDirectory)" ConsoleToMSBuild="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="DiagnosticGitHash" />
+    </Exec>
+    <ItemGroup>
+      <AssemblyMetadata Include="ReleaseChannel" Value="$(ReleaseChannel)" />
+      <AssemblyMetadata Include="BuildVersion" Value="$(InformationalVersion)" />
+      <AssemblyMetadata Include="GitHash" Value="$(DiagnosticGitHash)" />
+    </ItemGroup>
+  </Target>
+  <ItemGroup><ProjectReference Include="../CorgiBlackboard.Core/CorgiBlackboard.Core.csproj" /></ItemGroup>
+  <ItemGroup><Using Include="System.IO" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="../../docs/testing/0.1.0-test.1-classroom-checklist.md" LogicalName="CorgiBlackboard.ClassroomChecklist.md" /></ItemGroup>
+</Project>

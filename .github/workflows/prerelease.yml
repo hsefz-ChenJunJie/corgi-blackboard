@@ -1,0 +1,226 @@
+name: Guarded Test prerelease
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_run_id:
+        description: Run containing the staged package bound to this tag commit
+        required: true
+        type: number
+      authorize_publication:
+        description: Explicit user authorization to publish this exact Test tag and package
+        type: boolean
+        default: false
+      channel:
+        description: Stable requires explicit user channel approval and a separate reviewed workflow
+        type: choice
+        options:
+          - Test
+          - Stable
+        default: Test
+      stable_user_authorized:
+        description: Records explicit Stable channel direction; never enables Stable here
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'v0.1.0-test.*'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: test-prerelease-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  request:
+    runs-on: windows-2022
+    timeout-minutes: 5
+    steps:
+      - name: Require Test tag and explicit authorization
+        shell: pwsh
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.ref }}
+          CHANNEL: ${{ inputs.channel || 'Test' }}
+          AUTHORIZED: ${{ inputs.authorize_publication }}
+          STABLE_AUTHORIZED: ${{ inputs.stable_user_authorized }}
+        run: |
+          if ($env:CHANNEL -ceq 'Stable') {
+            if ($env:STABLE_AUTHORIZED -cne 'true') { throw 'Stable requires explicit user channel direction' }
+            throw 'Stable is outside this Test-only workflow; review a separate Stable delivery'
+          }
+          if ($env:CHANNEL -cne 'Test' -or $env:TAG -cnotmatch '^refs/tags/v0\.1\.0-test\.[1-9][0-9]*$') {
+            throw 'Select an existing Test tag, never a branch or Stable tag'
+          }
+          if ($env:EVENT -cne 'workflow_dispatch' -or $env:AUTHORIZED -cne 'true') {
+            throw 'A Test tag push cannot authorize publication; dispatch on the tag with explicit authorization'
+          }
+
+  checks:
+    needs: request
+    uses: ./.github/workflows/verify.yml
+    with:
+      package_run_id: ${{ inputs.package_run_id || 0 }}
+
+  readiness:
+    needs: checks
+    runs-on: windows-2022
+    timeout-minutes: 10
+    outputs:
+      package_integrity: ${{ steps.guard.outputs.package_integrity }}
+      runtime_readiness: ${{ steps.publication.outputs.runtime_readiness }}
+      publication_readiness: ${{ steps.publication.outputs.publication_readiness }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: validated-test-package-${{ github.sha }}
+          path: artifacts/staged-package
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-readiness-${{ github.sha }}
+          path: .omo/evidence/phase-one/task-15/staged
+          run-id: ${{ inputs.package_run_id }}
+          github-token: ${{ github.token }}
+      - name: Bind explicit Test authorization
+        shell: pwsh
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+          VERSION_TAG: ${{ github.ref_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $directory = (Resolve-Path artifacts/staged-package).ProviderPath
+          $manifest = Get-Content artifacts/staged-package/release-manifest.json -Raw | ConvertFrom-Json
+          if ($env:VERSION_TAG -cne "v$($manifest.version)") { throw 'Tag/version mismatch' }
+          $sums = @{}
+          foreach ($line in [IO.File]::ReadAllLines((Join-Path $directory 'SHA256SUMS'))) {
+            if ($line -match '^([a-f0-9]{64})  (.+)$') { $sums[$Matches[2]] = $Matches[1] }
+          }
+          $zip = "CorgiBlackboard-$($manifest.version)-win-x64.zip"
+          $installer = "CorgiBlackboard-$($manifest.version)-win-x64-setup.exe"
+          $testZip = "CorgiBlackboard-$($manifest.version)-win-x64-tests.zip"
+          $record = [ordered]@{
+            authorized = $true; userInstruction = "Authorized Test prerelease $env:VERSION_TAG"
+            commit = $env:EXPECTED_COMMIT; version = $manifest.version; channel = 'Test'
+            manifestSha256 = $sums['release-manifest.json']; exeSha256 = $manifest.exeSha256
+            zipSha256 = $sums[$zip]; installerSha256 = $sums[$installer]
+            testZipSha256 = $sums[$testZip]; testManifestSha256 = $sums['test-manifest.json']
+          }
+          $authPath = '.omo/evidence/phase-one/task-15/staged/authorization.json'
+          [IO.File]::WriteAllText($authPath, ($record | ConvertTo-Json -Depth 8))
+          $readinessPath = '.omo/evidence/phase-one/task-15/staged/readiness.json'
+          $readiness = Get-Content $readinessPath -Raw | ConvertFrom-Json
+          $readiness.publicationReadiness.status = 'passed'
+          $readiness.publicationReadiness.evidence.authorization = [ordered]@{
+            path = '.omo/evidence/phase-one/task-15/staged/authorization.json'
+            sha256 = (Get-FileHash $authPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          }
+          [IO.File]::WriteAllText($readinessPath, ($readiness | ConvertTo-Json -Depth 12))
+      - name: Require valid package integrity
+        id: guard
+        shell: pwsh
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          & pwsh -NoProfile -File scripts/release/Test-ReleaseReadiness.ps1 -ArtifactDir artifacts/staged-package -ExpectedCommit $env:EXPECTED_COMMIT -ReceiptPath .omo/evidence/phase-one/task-15/staged/readiness.json
+          if ($LASTEXITCODE -ne 0) { throw 'Package integrity is false' }
+          $manifest = Get-Content artifacts/staged-package/release-manifest.json -Raw | ConvertFrom-Json
+          if ($env:RELEASE_TAG -cne "v$($manifest.version)") { throw 'Tag/version mismatch' }
+          'package_integrity=true' >> $env:GITHUB_OUTPUT
+      - name: Require explicit Test publication authorization
+        id: publication
+        shell: pwsh
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: |
+          & pwsh -NoProfile -File scripts/release/Test-ReleaseReadiness.ps1 -ArtifactDir artifacts/staged-package -ExpectedCommit $env:EXPECTED_COMMIT -ReceiptPath .omo/evidence/phase-one/task-15/staged/readiness.json -RequirePublication
+          if ($LASTEXITCODE -ne 0) { throw 'Explicit Test publication authorization is invalid' }
+          'runtime_readiness=pending' >> $env:GITHUB_OUTPUT
+          'publication_readiness=true' >> $env:GITHUB_OUTPUT
+
+  publish:
+    needs: [request, checks, readiness]
+    if: >-
+      ${{ needs.request.result == 'success' && needs.checks.result == 'success' &&
+          needs.readiness.result == 'success' && needs.readiness.outputs.package_integrity == 'true' &&
+          needs.readiness.outputs.publication_readiness == 'true' &&
+          github.event_name == 'workflow_dispatch' && inputs.authorize_publication == true &&
+          inputs.channel == 'Test' && startsWith(github.ref, 'refs/tags/v0.1.0-test.') }}
+    runs-on: windows-2022
+    timeout-minutes: 10
+    environment: test-prerelease
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: validated-test-package-${{ github.sha }}
+          path: artifacts/staged-package
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-readiness-${{ github.sha }}
+          path: .omo/evidence/phase-one/task-15/staged
+          run-id: ${{ inputs.package_run_id }}
+          github-token: ${{ github.token }}
+      - name: Bind explicit Test authorization
+        shell: pwsh
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+          VERSION_TAG: ${{ github.ref_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $directory = (Resolve-Path artifacts/staged-package).ProviderPath
+          $manifest = Get-Content artifacts/staged-package/release-manifest.json -Raw | ConvertFrom-Json
+          if ($env:VERSION_TAG -cne "v$($manifest.version)") { throw 'Tag/version mismatch' }
+          $sums = @{}
+          foreach ($line in [IO.File]::ReadAllLines((Join-Path $directory 'SHA256SUMS'))) {
+            if ($line -match '^([a-f0-9]{64})  (.+)$') { $sums[$Matches[2]] = $Matches[1] }
+          }
+          $zip = "CorgiBlackboard-$($manifest.version)-win-x64.zip"
+          $installer = "CorgiBlackboard-$($manifest.version)-win-x64-setup.exe"
+          $testZip = "CorgiBlackboard-$($manifest.version)-win-x64-tests.zip"
+          $record = [ordered]@{
+            authorized = $true; userInstruction = "Authorized Test prerelease $env:VERSION_TAG"
+            commit = $env:EXPECTED_COMMIT; version = $manifest.version; channel = 'Test'
+            manifestSha256 = $sums['release-manifest.json']; exeSha256 = $manifest.exeSha256
+            zipSha256 = $sums[$zip]; installerSha256 = $sums[$installer]
+            testZipSha256 = $sums[$testZip]; testManifestSha256 = $sums['test-manifest.json']
+          }
+          $authPath = '.omo/evidence/phase-one/task-15/staged/authorization.json'
+          [IO.File]::WriteAllText($authPath, ($record | ConvertTo-Json -Depth 8))
+          $readinessPath = '.omo/evidence/phase-one/task-15/staged/readiness.json'
+          $readiness = Get-Content $readinessPath -Raw | ConvertFrom-Json
+          $readiness.publicationReadiness.status = 'passed'
+          $readiness.publicationReadiness.evidence.authorization = [ordered]@{
+            path = '.omo/evidence/phase-one/task-15/staged/authorization.json'
+            sha256 = (Get-FileHash $authPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          }
+          [IO.File]::WriteAllText($readinessPath, ($readiness | ConvertTo-Json -Depth 12))
+      - name: Recheck exact downloaded assets before public write
+        shell: pwsh
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: |
+          & pwsh -NoProfile -File scripts/release/Test-ReleaseReadiness.ps1 -ArtifactDir artifacts/staged-package -ExpectedCommit $env:EXPECTED_COMMIT -ReceiptPath .omo/evidence/phase-one/task-15/staged/readiness.json -RequirePublication
+          if ($LASTEXITCODE -ne 0) { throw 'Publication guard failed' }
+      - name: Publish only the authorized Test assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: |
+          $assets = @(Get-ChildItem artifacts/staged-package -File | ForEach-Object FullName)
+          gh release create $env:RELEASE_TAG @assets --verify-tag --target $env:EXPECTED_COMMIT --prerelease --title $env:RELEASE_TAG --notes-file artifacts/staged-package/RELEASE-NOTES.md
+          if ($LASTEXITCODE -ne 0) { throw 'Prerelease creation failed' }
