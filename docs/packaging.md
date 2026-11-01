@@ -13,10 +13,15 @@ remain unchanged; RID/version-specific locks live under each project's ignored
 cache-only RID restore and locked publish. No dependency version is upgraded.
 Retain acquisition logs separately from generated release assets.
 
-```powershell
-powershell -File scripts/release/Build-Package.ps1 -CompilerPath 'E:/corgi-blackboard-tools/task14-inno-6.7.4/compiler/{app}/ISCC.exe' -ArtifactDir artifacts/release/0.1.0-test.1-local
-powershell -File scripts/release/Test-Package.ps1 -ArtifactDir artifacts/release/0.1.0-test.1-local
-```
+For the complete application and independent test package, use
+`scripts/release/Stage-TestPackage.ps1` with `-Version`, a new `-ArtifactDir`,
+`-DotnetPath`, `-CompilerPath`, `-CompilerProvenancePath` and
+`-RuntimePackageRoot`. Acquire the pinned compiler and both application/runtime
+and UI-driver dependency caches first; [stage.yml](../.github/workflows/stage.yml)
+contains the hosted acquisition commands and passes these paths explicitly.
+Staging invokes both builders before running `Test-Package.ps1 -StaticOnly`.
+Validating the application builder's intermediate output alone is insufficient,
+because the distribution allowlist also requires the independent test package.
 
 The builder requires committed tracked source and records actual HEAD in the
 manifest and Infrastructure assembly metadata. Build logs and staging payload
@@ -37,9 +42,12 @@ These values are read from and checked against the compiler provenance receipt.
 The compiler's Windows file version is not used as provenance because official
 ISCC metadata reports `0.0.0.0`; unknown or mismatched provenance is rejected.
 
-The release directory contains exactly eight files: the ZIP, setup EXE,
+The final distribution contains exactly ten files: the application ZIP, setup
+EXE, independent `CorgiBlackboard-<version>-win-x64-tests.zip`,
 TEST-CHECKLIST.md, RELEASE-NOTES.md, THIRD-PARTY-NOTICES.md, feedback-guide.md,
-release-manifest.json and SHA256SUMS. The ZIP includes all untrimmed multifile
+release-manifest.json, test-manifest.json and SHA256SUMS. Staging also generates
+`readiness.json`, which is uploaded separately and excluded from distribution.
+The application ZIP includes all untrimmed multifile
 win-x64 self-contained application/runtime files and the exact license/notice
 files from the resolved 10.0.13 runtime packs,
 the 19-scenario checklist, payload manifest and recursive SHA256SUMS.
@@ -93,9 +101,14 @@ Integrity and runtime readiness are separate:
   `chinesePathWithSpaces=true`, `uninstallPreservedLogs=true`. Authorization
   requires `authorized=true` and nonempty `userInstruction`.
 
-Current GUI, native diagnostics, offline installation/uninstall, Windows 10/11,
-classroom and publication evidence are pending. Compilation and file validation
-do not turn those results into passed. No public release is authorized here.
+GUI, native diagnostics, offline installation/uninstall, device/OS combinations
+and classroom results remain pending until actual execution. Compilation and
+file validation do not turn those results into passed. The runtime-required
+`-RequireReleaseReady` mode above is not the Test publication gate. The hosted
+Test path uses `Test-ReleaseReadiness.ps1 -RequirePublication`, which requires
+package integrity and explicit annotated-tag authorization while retaining
+pending runtime readiness. See [releases.md](releases.md) for the exact
+authorization template, same-run artifacts and publication permissions.
 
 The hosted staging workflow acquires the pinned SDK/compiler/runtime cache and
 passes `-Version`, `-ReleaseChannel Test`, `-ArtifactDir`, `-DotnetPath`,
@@ -106,7 +119,7 @@ passes `-Version`, `-ReleaseChannel Test`, `-ArtifactDir`, `-DotnetPath`,
 independent `CorgiBlackboard-<version>-win-x64-tests.zip` is included in the
 staged SHA set and is checked by the release readiness guard.
 
-Official documentation resolved by the parent through Context7:
+Official documentation:
 [/dotnet/docs](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-restore)
 and [/jrsoftware/issrc](https://jrsoftware.org/ishelp/topic_compilercmdline.htm).
 See also [NuGet lock files](https://learn.microsoft.com/en-us/nuget/consume-packages/package-references-in-project-files#locking-dependencies),
