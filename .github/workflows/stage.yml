@@ -27,7 +27,7 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 45
     env:
-      NUGET_PACKAGES: ${{ runner.temp }}\corgi-nuget-cache
+      NUGET_PACKAGES: ${{ github.workspace }}\.nuget-cache
       VERSION: ${{ inputs.version }}
     steps:
       - uses: actions/checkout@v4
