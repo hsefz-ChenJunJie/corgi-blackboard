@@ -6,6 +6,17 @@ namespace CorgiBlackboard.UiTests;
 public sealed class ContractTests
 {
     [Theory]
+    [InlineData("Editing", false, true)]
+    [InlineData("Editing", true, true)]
+    [InlineData("Idle", false, false)]
+    [InlineData("Navigating", false, false)]
+    public void Gesture_start_observes_input_ownership_without_requiring_a_content_preview(string state, bool pending, bool expected)
+    {
+        var snapshot = new JsonObject { ["state"] = state, ["pending"] = pending };
+        Assert.Equal(expected, QaContract.GestureStarted(snapshot));
+    }
+
+    [Theory]
     [InlineData(false, true, true)]
     [InlineData(true, false, true)]
     [InlineData(true, true, false)]

@@ -116,7 +116,12 @@ internal static partial class DesktopScenarios
         app.Act(() => app.Click($"Document.{id}.Close"), state => Documents(state).Count == 0);
         var small = OpenImage(app, "small-grid-200x100.png");
         app.Act(() => app.Click($"Document.{small}.Fill"), state => Flag(Document(state, small), "filled"));
-        Require(Value(Document(app.Snapshot, small), "offsetY") == 0, "Short image acquired negative scroll range.");
+        var smallDocument = Document(app.Snapshot, small);
+        Require(Value(smallDocument, "height") * Value(smallDocument, "scale") <= Value(smallDocument, "viewportHeight"),
+            "Short-image fixture does not fit the viewport.");
+        app.Wheel(Id(smallDocument, "Content"), -1, state => Value(Document(state, small), "offsetY") == 0);
+        app.Wheel(Id(smallDocument, "Content"), 1, state => Value(Document(state, small), "offsetY") == 0);
+        Require(Value(Document(app.Snapshot, small), "offsetY") == 0, "Short image acquired a scroll offset.");
         app.Act(() => app.Click($"Document.{small}.Close"), state => Documents(state).Count == 0);
         app.Resize(window.Width, window.Height);
     }
@@ -134,13 +139,13 @@ internal static partial class DesktopScenarios
         var sessions = app.Find("Diagnostics.Sessions", dialog).AsListBox();
         Require(sessions.Items.Length == 1, "QA logs are not isolated from user sessions.");
         sessions.Items[0].Select();
-        var destination = Path.Combine(app.Temporary, "feedback.zip");
+        var destination = Path.Combine(app.Evidence, "feedback.zip");
         app.SetValue(app.Find("Diagnostics.OutputPath", dialog), destination);
         app.SetValue(app.Find("Diagnostics.Steps", dialog), "Task11 native input");
         app.SetValue(app.Find("Diagnostics.Expected", dialog), "Offline feedback for this executable");
         app.SetValue(app.Find("Diagnostics.Actual", dialog), "Collected on release desktop");
         // File publication is atomic. Subscribe before native Export click; watcher is not polling.
-        using var watcher = new FileSystemWatcher(app.Temporary, "feedback.zip") { EnableRaisingEvents = false };
+        using var watcher = new FileSystemWatcher(app.Evidence, "feedback.zip") { EnableRaisingEvents = false };
         var published = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         watcher.Created += (_, _) => published.TrySetResult();
         watcher.Renamed += (_, _) => published.TrySetResult();
@@ -152,6 +157,11 @@ internal static partial class DesktopScenarios
             Require(archive.GetEntry("manifest.json") is not null, "Feedback lacks manifest.");
             using var reader = new StreamReader(archive.GetEntry("manifest.json")!.Open());
             var manifest = JsonNode.Parse(reader.ReadToEnd())!;
+            var reproduction = manifest["reproduction"]!;
+            Require(reproduction["steps"]!.GetValue<string>() == "Task11 native input" &&
+                reproduction["expected"]!.GetValue<string>() == "Offline feedback for this executable" &&
+                reproduction["actual"]!.GetValue<string>() == "Collected on release desktop",
+                "Exported feedback differs from entered reproduction details.");
             var exported = manifest["sessions"]!.AsArray().Single()!;
             Require(exported["sessionId"]!.GetValue<string>() == app.Snapshot["sessionId"]!.GetValue<string>(), "Exported wrong session.");
             Require(!Flag(manifest, "incomplete"), "Feedback is incomplete.");

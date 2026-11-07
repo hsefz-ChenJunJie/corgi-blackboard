@@ -175,7 +175,7 @@ public sealed class BoardTests
         TouchMask = TouchMaskAll,
         ContactArea = new NativeRect(point.X - 2, point.Y - 2, point.X + 2, point.Y + 2),
         Orientation = 90,
-        Pressure = 32000
+        Pressure = 512
     };
 
     private sealed record BoardState(int Strokes, long Revision, double CameraX, double CameraY, bool Pending)

@@ -14,8 +14,10 @@ internal sealed partial class NativeDesktopSession
         foreground.CaptureToFile(Path.Combine(evidence, "screen.png"));
         var elements = Window.FindAllDescendants().Prepend(Window).Select(element => new
         {
-            id = element.AutomationId, element.Name, type = element.ControlType.ToString(),
-            physicalPixels = element.BoundingRectangle, element.IsOffscreen, status = element.Properties.ItemStatus.ValueOrDefault
+            id = element.Properties.AutomationId.ValueOrDefault, name = element.Properties.Name.ValueOrDefault,
+            type = element.Properties.ControlType.ValueOrDefault.ToString(),
+            physicalPixels = element.Properties.BoundingRectangle.ValueOrDefault,
+            isOffscreen = element.Properties.IsOffscreen.ValueOrDefault, status = element.Properties.ItemStatus.ValueOrDefault
         }).ToArray();
         File.WriteAllText(Path.Combine(evidence, "uia.json"), JsonSerializer.Serialize(elements, QaContract.Json));
         File.WriteAllText(Path.Combine(evidence, "snapshot.json"), Snapshot.ToJsonString(QaContract.Json));

@@ -18,6 +18,7 @@ internal sealed partial class NativeDesktopSession(string exe, string temporary,
     internal Window Window { get; private set; } = null!;
     internal UIA3Automation Automation => _automation!;
     internal string Temporary => temporary;
+    internal string Evidence => evidence;
     internal string PackageDirectory => Path.GetDirectoryName(exe)!;
     internal uint Dpi { get; private set; }
     internal double Scale => Dpi / 96d;
@@ -128,9 +129,9 @@ internal sealed partial class NativeDesktopSession(string exe, string temporary,
         var rect = Find(id).BoundingRectangle;
         var from = new Point(rect.Left + rect.Width / 2, rect.Top + rect.Height / 2);
         Move(from);
-        Act(Down, _ => true);
+        Down();
         Act(() => Move(new Point(from.X + (int)Math.Round(dx * Scale), from.Y + (int)Math.Round(dy * Scale))), complete);
-        Act(Up, _ => true);
+        Up();
     }
 
     internal Point Screen(string id, double xDip, double yDip)
@@ -172,7 +173,7 @@ internal sealed partial class NativeDesktopSession(string exe, string temporary,
     {
         var before = QaContract.Number(Snapshot, "contentRevision");
         Move(Screen(id, from.X, from.Y));
-        Act(Down, state => QaContract.Flag(state, "pending"));
+        Act(Down, QaContract.GestureStarted);
         Act(() => Move(Screen(id, to.X, to.Y)), state => QaContract.Flag(state, "pending"));
         Act(Up, state => !QaContract.Flag(state, "pending") && QaContract.Number(state, "contentRevision") == before + 1);
     }

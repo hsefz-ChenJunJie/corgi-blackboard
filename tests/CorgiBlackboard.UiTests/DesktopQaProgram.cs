@@ -87,6 +87,7 @@ internal static class DesktopQaProgram
             dpi = session?.Dpi, inputBackend = "Win32 InjectTouchInput / FlaUI native mouse",
             screenshotSha256 = captured ? Hash(Path.Combine(evidence, "screen.png")) : null,
             screenshotReview = "pending human review", errors, cleanupPassed = clean,
+            scenarioPassed = passed, evidenceComplete = complete,
             artifacts, managedPayloads = payloads, productPass = scenario != "HarnessFailure" && exit == 0
         }, QaContract.Json));
         actions.Dispose();

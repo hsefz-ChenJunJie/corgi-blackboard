@@ -55,6 +55,17 @@ internal static partial class DesktopScenarios
             foreach (var id in new[] { "Tool.Eraser", "Tool.Pen", "Tool.Color.Red", "Tool.Color.White",
                 "Tool.Width.8", "Tool.Width.4", "Tool.EraserSize.48", "Tool.EraserSize.24" })
                 app.Select(id);
+            foreach (var group in new[]
+            {
+                new[] { "Tool.Pen", "Tool.Eraser" },
+                new[] { "Tool.Color.White", "Tool.Color.Red", "Tool.Color.Yellow", "Tool.Color.Green", "Tool.Color.Blue" },
+                new[] { "Tool.Width.2", "Tool.Width.4", "Tool.Width.8", "Tool.Width.12" },
+                new[] { "Tool.EraserSize.12", "Tool.EraserSize.24", "Tool.EraserSize.48" }
+            })
+            {
+                Require(group.Count(id => app.Find(id).Patterns.Toggle.Pattern.ToggleState.Value == FlaUI.Core.Definitions.ToggleState.On) == 1,
+                    "Tool group does not have exactly one selection: " + string.Join(", ", group));
+            }
             app.Stage($"shell-{size.Item1}x{size.Item2}");
         }
     }

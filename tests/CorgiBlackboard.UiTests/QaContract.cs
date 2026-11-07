@@ -41,4 +41,6 @@ internal static class QaContract
     internal static long Number(JsonNode node, string key) => node[key]!.GetValue<long>();
     internal static double Value(JsonNode node, string key) => node[key]!.GetValue<double>();
     internal static bool Flag(JsonNode node, string key) => node[key]!.GetValue<bool>();
+
+    internal static bool GestureStarted(JsonNode state) => state["state"]!.GetValue<string>() == "Editing";
 }

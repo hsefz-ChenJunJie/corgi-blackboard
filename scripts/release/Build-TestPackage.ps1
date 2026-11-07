@@ -2,7 +2,8 @@
 param(
     [Parameter(Mandatory)][string]$ArtifactDir,
     [Parameter(Mandatory)][string]$DotnetPath,
-    [string]$RuntimePackageRoot = $env:NUGET_PACKAGES
+    [string]$RuntimePackageRoot = $env:NUGET_PACKAGES,
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$')][string]$DriverRevision
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -33,9 +34,34 @@ $head = (& git rev-parse --verify HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $head -notmatch '^[a-f0-9]{40}$' -or $head -cne $manifest.commit) {
     throw 'Application manifest commit differs from the current source HEAD.'
 }
-if (@(& git status --porcelain --untracked-files=no).Count -ne 0) {
-    throw 'Tracked source changes must be committed before packaging the bound driver.'
+$trackedChanges = @(& git diff --name-only --no-renames --)
+if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect tracked source changes.' }
+$trackedChanges += @(& git diff --cached --name-only --no-renames --)
+if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect staged source changes.' }
+if ($DriverRevision) {
+    $forbiddenChanges = @($trackedChanges | Where-Object {
+        $_ -cnotmatch '^tests/CorgiBlackboard\.UiTests/' -and $_ -cne 'scripts/release/Build-TestPackage.ps1'
+    })
+    if ($forbiddenChanges.Count -ne 0) {
+        throw "DriverRevision only permits test-driver and package-script changes: $($forbiddenChanges -join ', ')"
+    }
+} elseif ($trackedChanges.Count -ne 0) {
+    throw 'Tracked source changes require a clean committed build, or an explicit DriverRevision for test-driver-only repairs.'
 }
+$driverInputPaths = @(& git ls-files --cached --others --exclude-standard -- `
+    tests/CorgiBlackboard.UiTests tests/Fixtures src Directory.Build.props Directory.Build.targets `
+    Directory.Packages.props global.json NuGet.Config scripts/release/Build-TestPackage.ps1)
+if ($LASTEXITCODE -ne 0) { throw 'Cannot inventory driver source inputs.' }
+if (-not $DriverRevision) {
+    $untrackedDriverInputs = @(& git ls-files --others --exclude-standard -- tests/CorgiBlackboard.UiTests)
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect untracked driver inputs.' }
+    if ($untrackedDriverInputs.Count -ne 0) { throw 'Uncommitted driver inputs require an explicit DriverRevision.' }
+}
+$driverInputs = @($driverInputPaths | Sort-Object -Unique | Where-Object {
+    $_ -notmatch '(^|/)(bin|obj)/' -and (Test-Path -LiteralPath (Join-Path $root $_) -PathType Leaf)
+} | ForEach-Object {
+    [ordered]@{ path = $_; sha256 = (Get-FileHash -LiteralPath (Join-Path $root $_) -Algorithm SHA256).Hash.ToLowerInvariant() }
+})
 $zipName = "CorgiBlackboard-$version-win-x64-tests.zip"
 $zipPath = Join-Path $artifact $zipName
 if (Test-Path -LiteralPath $zipPath) { throw "Refusing to replace existing test package: $zipName" }
@@ -80,9 +106,6 @@ try {
     }
     Get-ChildItem -LiteralPath $publish -File -Recurse | ForEach-Object {
         $relative = $_.FullName.Substring($publish.Length + 1)
-        if ($relative -notmatch '^(CorgiBlackboard\.UiTests(\.dll|\.deps\.json|\.runtimeconfig\.json|\.pdb)?|FlaUI\..*|Interop\.UIAutomationClient\.dll|System\.Management\.dll|testhost.*|xunit\..*|Newtonsoft\.Json\.dll|runtimes[\\/].*|.*\.resources\.dll|.*\.dll|.*\.json|.*\.exe)$') {
-            return
-        }
         $destination = Join-Path $stage $relative
         New-Item -ItemType Directory -Force -Path ([IO.Path]::GetDirectoryName($destination)) | Out-Null
         Copy-Item -LiteralPath $_.FullName -Destination $destination
@@ -165,9 +188,17 @@ try {
 .\Run-All.ps1 -AppPath C:\path\CorgiBlackboard.App.exe -EvidenceRoot .\results -ConfirmDesktop
 ```
 
-启动前会核对 `Test` 通道、版本、源提交和应用 exe SHA256；桌面操作必须显式传入 `-ConfirmDesktop`。测试不会安装软件或修改系统配置。结果目录保留 `result.json`、`actions.jsonl`、截图、UIA 信息和 `cleanup.json`；失败与不支持原因必须保留。
+启动前会核对包内 `SHA256SUMS`、`Test` 通道、版本、应用源提交、应用 exe 和 App/Infrastructure/Core 三个托管程序集的 SHA256；桌面操作必须显式传入 `-ConfirmDesktop`。`EvidenceRoot` 和单场景结果目录都必须是尚不存在的新目录。测试不会安装软件或修改系统配置。结果目录保留 `result.json`、`actions.jsonl`、截图、UIA 信息和 `cleanup.json`；失败与不支持原因必须保留。
 
-八个入口：`ShellLayout`、`BoardInkErase`、`TouchCancel`、`ImageWindows`、`ImageFitRestore`、`DiagnosticsExport`、`HarnessFailure`、`ReleaseSmoke`。`HarnessFailure` 是驱动自检，不能作为产品通过。合成触控不替代实体笔、真实屏幕、投屏或整节课人工测试。GUI 实际执行在本构建环境为“未测”。
+`test-manifest.json` 的 `commit` 和 `driverSourceCommit` 标明原始已发布应用及驱动基线提交。可选 `driverRevision` 标明本地驱动修订；此时不能只用源提交声称驱动与原版相同，`driverInputs` 逐项记录实际源码、项目文件和打包脚本的 SHA256。应用身份仍绑定原始发布提交，不随驱动修订改变。
+
+八个入口：`ShellLayout`、`BoardInkErase`、`TouchCancel`、`ImageWindows`、`ImageFitRestore`、`DiagnosticsExport`、`HarnessFailure`、`ReleaseSmoke`。`Run-All` 运行除 `HarnessFailure` 外的七项，即使某项失败也继续独立场景，最后报告所有失败并以非零状态退出。`HarnessFailure` 是故意失败的驱动自检，只能单独显式运行，预期非零退出，不能作为产品通过：
+
+```powershell
+.\Run-Scenario.ps1 -Scenario HarnessFailure -AppPath C:\path\CorgiBlackboard.App.exe -EvidenceDir .\selftest-new -ConfirmDesktop
+```
+
+阅读 `result.json` 时分别检查 `scenarioPassed`（场景断言是否通过）、`evidenceComplete`（证据是否齐全）以及驱动错误字段（harness errors）。断言通过不代表证据完整；驱动错误也不能当作产品通过。启动校验失败可能尚未生成结果文件，须同时保留控制台错误。合成触控不替代实体笔、真实屏幕、投屏或整节课人工测试。GUI 实际执行在本构建环境为“未测”，等待 Windows 交互桌面验证。
 
 请把结果目录和 `feedback-guide.md` 一起人工反馈；本包不会自动上传日志、截图或证据。`TEST-CHECKLIST.md` 包含 19 项课堂检查和隐私边界。
 '@ | Set-Content -LiteralPath (Join-Path $stage 'README-test-package.md') -Encoding UTF8
@@ -178,8 +209,41 @@ param([Parameter(Mandatory)][ValidateSet('ShellLayout','BoardInkErase','TouchCan
 $ErrorActionPreference = 'Stop'
 if (-not $ConfirmDesktop) { throw 'Desktop automation is opt-in. Add -ConfirmDesktop after reviewing the package instructions.' }
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
+$packageRoot = [IO.Path]::GetFullPath($here).TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
+$checked = @{}
+foreach ($line in Get-Content -LiteralPath (Join-Path $here 'SHA256SUMS')) {
+    if ($line -notmatch '^([a-f0-9]{64})  (.+)$') { throw 'Invalid package checksum entry.' }
+    $expected = $Matches[1]
+    $relative = $Matches[2]
+    if ([IO.Path]::IsPathRooted($relative) -or $relative -match '(^|[\\/])\.\.?([\\/]|$)|[:*?"<>|]' -or
+        $checked.ContainsKey($relative)) { throw "Unsafe or duplicate package checksum path: $relative" }
+    $file = [IO.Path]::GetFullPath((Join-Path $here $relative))
+    if (-not $file.StartsWith($packageRoot, [StringComparison]::OrdinalIgnoreCase) -or
+        -not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Package file is missing or outside package: $relative" }
+    $item = Get-Item -LiteralPath $file
+    while ($item.FullName -ne $here) {
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Package links are not permitted: $relative" }
+        $item = Get-Item -LiteralPath (Split-Path -Parent $item.FullName)
+        if ($null -eq $item) { throw "Package path has no package parent: $relative" }
+    }
+    if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) {
+        throw "Package checksum differs: $relative"
+    }
+    $checked[$relative] = $true
+}
+foreach ($required in @('CorgiBlackboard.UiTests.exe','CorgiBlackboard.UiTests.dll',
+        'CorgiBlackboard.UiTests.deps.json','CorgiBlackboard.UiTests.runtimeconfig.json',
+        'test-manifest.json','release-manifest.json','Run-Scenario.ps1','Run-All.ps1')) {
+    if (-not $checked.ContainsKey($required)) { throw "Package checksum is missing: $required" }
+}
 $app = [IO.Path]::GetFullPath($AppPath)
 $manifest = Get-Content (Join-Path $here 'test-manifest.json') -Raw | ConvertFrom-Json
+foreach ($file in $manifest.files) {
+    if (-not $checked.ContainsKey([string]$file.path)) { throw "Package checksum is missing: $($file.path)" }
+    if ((Get-FileHash -LiteralPath (Join-Path $here $file.path) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $file.sha256) {
+        throw "Package file differs from test-manifest.json: $($file.path)"
+    }
+}
 $release = Get-Content (Join-Path $here 'release-manifest.json') -Raw | ConvertFrom-Json
 if ($release.channel -cne 'Test' -or $release.version -cne $manifest.version -or $release.commit -cne $manifest.commit) { throw 'Test and application identities differ.' }
 if (-not (Test-Path -LiteralPath $app)) { throw "Application executable not found: $app" }
@@ -191,7 +255,8 @@ $managedPayload = @{
     'CorgiBlackboard.Infrastructure.dll' = [string]$release.managedPayload.infrastructureSha256
 }
 $coreFile = @($release.files | Where-Object { $_.path -match '(^|/)CorgiBlackboard\.Core\.dll$' })
-if ($coreFile.Count -eq 1) { $managedPayload['CorgiBlackboard.Core.dll'] = [string]$coreFile[0].sha256 }
+if ($coreFile.Count -ne 1) { throw 'Release manifest must contain exactly one Core payload hash.' }
+$managedPayload['CorgiBlackboard.Core.dll'] = [string]$coreFile[0].sha256
 foreach ($name in $managedPayload.Keys) {
     if ($managedPayload[$name] -notmatch '^[a-f0-9]{64}$') {
         throw "Release manifest has no valid managed payload hash: $name"
@@ -210,12 +275,27 @@ exit $LASTEXITCODE
     @'
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$AppPath, [Parameter(Mandatory)][string]$EvidenceRoot, [switch]$ConfirmDesktop)
+$ErrorActionPreference = 'Stop'
+if (-not $ConfirmDesktop) { throw 'Desktop automation is opt-in. Add -ConfirmDesktop after reviewing the package instructions.' }
+if (Test-Path -LiteralPath $EvidenceRoot) { throw 'Evidence root already exists; choose a new directory.' }
+New-Item -ItemType Directory -Path $EvidenceRoot | Out-Null
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
-$scenarios = 'ShellLayout','BoardInkErase','TouchCancel','ImageWindows','ImageFitRestore','DiagnosticsExport','HarnessFailure','ReleaseSmoke'
+$scenarios = 'ShellLayout','BoardInkErase','TouchCancel','ImageWindows','ImageFitRestore','DiagnosticsExport','ReleaseSmoke'
+$failures = @()
 foreach ($scenario in $scenarios) {
-    & (Join-Path $here 'Run-Scenario.ps1') -Scenario $scenario -AppPath $AppPath -EvidenceDir (Join-Path $EvidenceRoot $scenario) -ConfirmDesktop:$ConfirmDesktop
-    if ($LASTEXITCODE -ne 0) { throw "Scenario failed: $scenario" }
+    try {
+        $LASTEXITCODE = 0
+        & (Join-Path $here 'Run-Scenario.ps1') -Scenario $scenario -AppPath $AppPath -EvidenceDir (Join-Path $EvidenceRoot $scenario) -ConfirmDesktop
+        if ($LASTEXITCODE -ne 0) { $failures += "${scenario}: exit $LASTEXITCODE" }
+    } catch {
+        $failures += "${scenario}: $($_.Exception.Message)"
+    }
 }
+if ($failures.Count -ne 0) {
+    foreach ($failure in $failures) { [Console]::Error.WriteLine($failure) }
+    exit 1
+}
+exit 0
 '@ | Set-Content -LiteralPath (Join-Path $stage 'Run-All.ps1') -Encoding UTF8
     $testFiles = @(Get-ChildItem -LiteralPath $stage -File -Recurse | ForEach-Object {
         [ordered]@{ path = $_.FullName.Substring($stage.Length + 1).Replace('\','/'); size = $_.Length
@@ -224,7 +304,8 @@ foreach ($scenario in $scenarios) {
     $driverAssembly = [Reflection.AssemblyName]::GetAssemblyName((Join-Path $publish 'CorgiBlackboard.UiTests.dll'))
     if ($driverAssembly.Name -cne 'CorgiBlackboard.UiTests') { throw 'Published driver assembly identity differs.' }
     $testManifest = [ordered]@{ schemaVersion = 1; packageType = 'offline-gui-test-driver'; version = $version
-        channel = 'Test'; commit = $manifest.commit; driverSourceCommit = $head; appExeSha256 = $manifest.exeSha256
+        channel = 'Test'; commit = $manifest.commit; driverSourceCommit = $head; driverRevision = $DriverRevision
+        driverInputs = $driverInputs; appExeSha256 = $manifest.exeSha256
         scenarios = @('ShellLayout','BoardInkErase','TouchCancel','ImageWindows','ImageFitRestore','DiagnosticsExport','HarnessFailure','ReleaseSmoke')
         selfContained = $true; runtimeIdentifier = 'win-x64'; guiExecution = 'untested'; files = $testFiles }
     $testManifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $stage 'test-manifest.json') -Encoding UTF8
